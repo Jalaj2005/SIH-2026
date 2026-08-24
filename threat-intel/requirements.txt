@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+redis
+taxii2-client
+stix2
+apscheduler
+python-dotenv
+requests
+pytest
