@@ -1,99 +1,105 @@
-# Module 4 — DNS Tunneling & Risk Aggregator
+# Module 6 — SOC Web Dashboard
 
-This is Person 4's module in the SIH1524 DNS filtering project. It sits
-between Person 1 (DNS resolver), Person 2 (DGA classifier), and Person 3
-(threat intel), and produces the final BLOCK/ALLOW verdict.
+Person 6's deliverable per the team's distribution plan: a React/Next.js frontend
+plus a backend REST + WebSocket gateway, running on mock telemetry from hour 1 so
+you never block on Modules 1–5.
 
-## Run it
+```
+module6-soc-dashboard/
+├── backend/     Express + Socket.io gateway, mock DNS telemetry generator
+├── frontend/    Next.js dashboard (Tailwind, recharts, socket.io-client)
+└── docker-compose.yml
+```
+
+## Quick start (local dev, two terminals)
 
 ```bash
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port 8004 --reload
+# Terminal 1 — backend gateway (port 4000)
+cd backend
+npm install
+npm run dev
+
+# Terminal 2 — frontend (port 3000)
+cd frontend
+npm install
+npm run dev
 ```
 
-Interactive docs at `http://localhost:8004/docs` once running.
+Open http://localhost:3000. You should see queries streaming in every ~1.2s,
+stat cards updating, client health, a threat breakdown chart, and a PCAP/Zeek
+log uploader.
 
-## API
+## Docker (one command)
 
-### `POST /score`
+```bash
+docker-compose up --build
+```
 
-Request:
+## What's mocked vs. real
+
+The backend generates realistic synthetic DNS query events (safe traffic, DGA
+domains, phishing/typosquats, tunneling) at a steady interval and pushes them
+over both REST and WebSocket. **The response shapes exactly mirror the
+contracts your teammates are building**, so swapping mock → real is a small,
+contained change in `backend/server.js` and `backend/mockData.js` — nothing in
+the frontend needs to change.
+
+| From distribution.docx | Mock stand-in today | Swap point |
+|---|---|---|
+| Module 2 — `{"dga_score":0.94,"is_dga":true,"inference_time_ms":2.1}` | `generateEvent()` fabricates this per query | Call Module 2's endpoint instead, merge into event |
+| Module 3 — `check_intel(domain)` → `{"is_blacklisted":true,"source":"AlienVault_OTX","threat_type":"phishing"}` | Randomly rolled per query | Call Module 3's Redis-backed lookup |
+| Module 4 — `{"composite_risk":0.88,"verdict":"BLOCK","reason":"DGA_Detected"}` | Computed in `generateEvent()` | Call Module 4's aggregator with the real 2+3 outputs |
+| Module 5 — `[{"src_ip":...,"domain":...,"detected_by":...,"timestamp":...}]` | `/api/forensics/upload` fabricates a report | Proxy the uploaded file to Module 5's parser, return its real JSON |
+| Module 1 — DNS server itself | N/A (dashboard doesn't run DNS) | Module 1 should POST/stream events into this gateway once live, e.g. `POST /api/ingest` (add this endpoint when Module 1 is ready) |
+
+## Gateway API (backend)
+
+- `GET /api/health` — liveness check
+- `GET /api/queries?limit=50` — recent DNS telemetry events, newest first
+- `GET /api/stats` — aggregate counts, block rate, avg latency, threats by reason
+- `GET /api/clients` — per-client device health (healthy / suspicious / compromised)
+- `GET /api/threats/recent?limit=20` — recent non-ALLOW events
+- `POST /api/forensics/upload` — multipart file upload (`.pcap`, `.pcapng`, `.tsv`, `.log`), returns a forensic report
+- `GET /api/forensics/reports` — history of uploaded/processed reports
+- WebSocket `dns:snapshot` (on connect) and `dns:event` (per new query) — same shape as `/api/queries` items
+
+## Event shape (streamed + REST)
+
 ```json
 {
+  "id": "evt_...",
+  "timestamp": "2026-08-25T08:53:20.627Z",
+  "client_ip": "192.168.1.12",
+  "client_hostname": "SRV-FILE-02",
   "domain": "x89vf2qlmn3.top",
-  "query_type": "TXT",
+  "query_type": "A",
   "dga_score": 0.94,
+  "is_dga": true,
   "intel_match": false,
-  "client_ip": "192.168.1.15"
+  "is_blacklisted": false,
+  "threat_source": null,
+  "threat_type": null,
+  "composite_risk": 0.96,
+  "verdict": "BLOCK",
+  "reason": "DGA_Detected",
+  "response_time_ms": 5.2,
+  "inference_time_ms": 2.1
 }
 ```
-`client_ip` is optional — needed for burst detection but not in the
-original team contract. If the caller (Person 1/6) can pass it, do;
-otherwise burst just contributes 0 and everything else still works.
 
-Response (matches team contract exactly):
-```json
-{"composite_risk": 0.65, "verdict": "BLOCK", "reason": "DGA_Detected"}
-```
+## Config
 
-### `POST /score/debug`
+Frontend reads `NEXT_PUBLIC_API_URL` (see `frontend/.env.local`, defaults to
+`http://localhost:4000`). Point this at wherever the gateway ends up running —
+no other frontend code needs to change.
 
-Same input, but returns the full breakdown (individual sub-scores,
-tunneling signals) — useful for Person 6's dashboard drill-down view and
-for tuning weights.
+## Notes for integration day (per the team's golden rules)
 
-### `GET /health`
-
-Liveness check for docker-compose / the API gateway.
-
-## How the score is built
-
-```
-Composite Risk = WEIGHT_DGA * dga_score
-                + WEIGHT_TUNNELING * tunneling_score
-                + WEIGHT_REPUTATION * reputation_score
-```
-
-- **dga_score** — passed in from Person 2, used as-is.
-- **tunneling_score** — computed here from 4 signals (see
-  `tunneling.py`): entropy of the leftmost subdomain label, subdomain
-  length, query type (TXT/NULL are exfil-friendly), and burst behaviour
-  (many unique subdomains from one client hitting one root domain fast).
-- **reputation_score** — a placeholder TLD-risk heuristic (see
-  `scoring.py`). Real domain-age/WHOIS reputation wasn't assigned to any
-  module in the plan — swap in a real source here if the team wants it,
-  or leave it as a low-weight placeholder.
-
-If `intel_match` is `true`, Module 4 short-circuits straight to
-`BLOCK` / `THREAT_INTEL_MATCH` regardless of the other scores (Stage 2
-in the pipeline doc should normally catch this before Module 4 is even
-called — this is just a defensive fallback).
-
-## Tuning
-
-All weights and the `BLOCK_THRESHOLD` live in `config.py`. **These are
-placeholder values** — calibrate them once you have labeled data (e.g.
-the `dnsqueriesdataset` train/test CSVs from the tunneling notebook).
-Important gotcha: if a single sub-score's weight is lower than
-`BLOCK_THRESHOLD`, that signal can never trigger BLOCK on its own no
-matter how confident it is — keep threshold ≤ your largest weight if you
-want single strong signals to be decisive.
-
-## Known limitations / next steps
-
-- `BurstTracker` is in-memory and per-process. Fine for a hackathon demo;
-  for real multi-worker deployment, move it to the Redis instance Person 3
-  already runs (natural shared store for both of you).
-- `reputation_score` is a placeholder heuristic, not a real reputation
-  system.
-- No auth/rate-limiting on the endpoint — add if this is exposed beyond
-  the internal docker-compose network.
-
-## Files
-
-| File | Purpose |
-|---|---|
-| `main.py` | FastAPI app, request/response models, endpoints |
-| `scoring.py` | Composite risk aggregation + reputation heuristic |
-| `tunneling.py` | Entropy / length / query-type / burst sub-scores |
-| `config.py` | All tunable weights, thresholds, TLD list |
+- This dashboard never blocks on the other 5 modules — it already has its own
+  believable data.
+- When Module 1's DNS engine is ready to stream real telemetry, add a
+  `POST /api/ingest` route to `backend/server.js` that accepts the same event
+  shape shown above and calls `pushEvent()` — then just turn off the
+  `setInterval` mock generator.
+- `backend/mockData.js` is isolated on purpose so it's a one-file delete once
+  real modules are wired in.
