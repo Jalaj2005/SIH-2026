@@ -9,7 +9,6 @@
 [![Go](https://img.shields.io/badge/Language-Go-00ADD8.svg?logo=go&logoColor=white)](https://golang.org/)
 [![Python](https://img.shields.io/badge/Language-Python%203.10+-3776AB.svg?logo=python&logoColor=white)](https://python.org/)
 [![React](https://img.shields.io/badge/Frontend-React%20%2F%20Next.js-61DAFB.svg?logo=react&logoColor=white)](https://reactjs.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
 
@@ -233,8 +232,6 @@ Developed for the **Smart India Hackathon** by **Team Cape & Cipher**:
 * **SOC Dashboard & DevOps Integration:** Module 6 Lead
 
 ---
-
-## 📜 License
 
 This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
 
