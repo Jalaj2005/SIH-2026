@@ -223,7 +223,7 @@ REDIS_PORT=6379
 
 ## 👥 The Team
 
-Developed for the **Smart India Hackathon** by **Team ProdCon**:
+Developed for the **Smart India Hackathon** by **Team Cape & Cipher**:
 
 * **Core DNS & Network Architecture:** Module 1 Lead
 * **AI/ML & DGA Classification:** Module 2 Lead
