@@ -9,7 +9,7 @@ services:
     restart: unless-stopped
 
   dashboard-frontend:
-    build: ./frontend
+    build: ./soc-dashboard/frontend
     container_name: soc-dashboard-frontend
     ports:
       - "3000:3000"
