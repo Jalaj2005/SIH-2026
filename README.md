@@ -231,10 +231,3 @@ Developed for the **Smart India Hackathon** by **Team Cape & Cipher**:
 * **Passive Forensics & Log Engine:** Module 5 Lead
 * **SOC Dashboard & DevOps Integration:** Module 6 Lead
 
----
-
-This project is licensed under the MIT License - see the [LICENSE](https://www.google.com/search?q=LICENSE) file for details.
-
-```
-
-```
