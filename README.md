@@ -1,4 +1,4 @@
-```markdown
+
 # 🛡️ SentinelDNS: AI-Powered DNS Filtering & Threat Intelligence Gateway
 
 > **Smart India Hackathon (SIH) | Problem Statement SIH1524**  
@@ -70,7 +70,6 @@ By combining deterministic threat intelligence feeds (**STIX 2.1 / TAXII 2.0**) 
                                      [ Return Valid IP         ]
 
 ```
-
 ---
 
 ## 🧱 Module & Tech Stack Breakdown
