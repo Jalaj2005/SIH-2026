@@ -1,5 +1,5 @@
 
-# 🛡️ SentinelDNS: AI-Powered DNS Filtering & Threat Intelligence Gateway
+# 🛡️ DNS Sentinel: AI-Powered DNS Filtering & Threat Intelligence Gateway
 
 > **Smart India Hackathon (SIH) | Problem Statement SIH1524**  
 > **Organization:** Indian Space Research Organisation (ISRO)  
