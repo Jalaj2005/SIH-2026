@@ -14,7 +14,7 @@
 
 ## 📌 Overview
 
-**SentinelDNS** is an enterprise-grade, self-hosted DNS firewall and recursive resolver designed for air-gapped mission networks and enterprise gateways. It intercepts and filters malicious traffic at the DNS resolution layer before connections are established.
+**DNS Sentinel** is an enterprise-grade, self-hosted DNS firewall and recursive resolver designed for air-gapped mission networks and enterprise gateways. It intercepts and filters malicious traffic at the DNS resolution layer before connections are established.
 
 By combining deterministic threat intelligence feeds (**STIX 2.1 / TAXII 2.0**) with sub-5ms **AI/ML models**, SentinelDNS identifies zero-day Domain Generation Algorithms (DGAs), phishing impersonations, and covert DNS tunneling attacks while maintaining average query response times well below **100 milliseconds**.
 
