@@ -1,233 +1,161 @@
+# DGA Detection
 
-# 🛡️ DNS Sentinel: AI-Powered DNS Filtering & Threat Intelligence Gateway
+A machine learning pipeline that detects **Domain Generation Algorithm (DGA)** domains — the algorithmically generated domains used by malware for command-and-control (C2) communication — and distinguishes them from legitimate domains using lexical and statistical features. The final model is served via a **FastAPI** REST endpoint.
 
-> **Smart India Hackathon (SIH) | Problem Statement SIH1524**  
-> **Organization:** Indian Space Research Organisation (ISRO)  
-> **Category:** Software / Space Technology / Cybersecurity
+## How It Works
 
-[![Docker](https://img.shields.io/badge/Docker-Ready-blue.svg?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Go](https://img.shields.io/badge/Language-Go-00ADD8.svg?logo=go&logoColor=white)](https://golang.org/)
-[![Python](https://img.shields.io/badge/Language-Python%203.10+-3776AB.svg?logo=python&logoColor=white)](https://python.org/)
-[![React](https://img.shields.io/badge/Frontend-React%20%2F%20Next.js-61DAFB.svg?logo=react&logoColor=white)](https://reactjs.org/)
+1. **Data loading & cleaning** — Loads a labeled dataset (`label`, `family`, `domain`), normalizes domain strings, drops missing values, and removes conflicting/duplicate entries (domains labeled both DGA and legit).
+2. **Feature engineering** — Extracts 10 lexical features from each domain (TLD excluded to avoid bias):
+   - Domain length
+   - Digit count & digit ratio
+   - Vowel ratio / consonant ratio
+   - Shannon entropy
+   - Unique character ratio
+   - Hyphen count
+   - Label count
+   - Longest label length
+3. **N-gram language modeling** — Fits bigram and trigram probability models **only on legitimate domains from the training set** (to prevent data leakage) and uses them to score how "natural" a domain string looks.
+4. **Model training & tuning** — Trains and tunes several classifiers with `RandomizedSearchCV`:
+   - Logistic Regression
+   - Decision Tree
+   - Random Forest
+   - Gradient Boosting
+   - XGBoost (if installed)
+   - LightGBM (if installed)
+5. **Evaluation**
+   - Standard train/validation/test split (70/15/15) with accuracy, precision, recall, F1, and ROC-AUC.
+   - A **family-unseen evaluation**: selected DGA families (e.g. `gozi`, `suppobox`) are held out entirely from training to test generalization to malware families the model has never seen.
+   - Feature importance analysis (Random Forest).
+6. **Model selection & export** — The best model is chosen by F1-score (with recall and ROC-AUC as tie-breakers) and saved, along with the fitted n-gram models and feature list, to `final_dga_model.joblib`.
+7. **Serving** — A FastAPI app (`app.py`) loads the saved pipeline and exposes `/health` and `/predict` endpoints for real-time inference.
 
----
-
-## 📌 Overview
-
-**DNS Sentinel** is an enterprise-grade, self-hosted DNS firewall and recursive resolver designed for air-gapped mission networks and enterprise gateways. It intercepts and filters malicious traffic at the DNS resolution layer before connections are established.
-
-By combining deterministic threat intelligence feeds (**STIX 2.1 / TAXII 2.0**) with sub-5ms **AI/ML models**, SentinelDNS identifies zero-day Domain Generation Algorithms (DGAs), phishing impersonations, and covert DNS tunneling attacks while maintaining average query response times well below **100 milliseconds**.
-
----
-
-## ✨ Key Features
-
-- **Multi-Protocol Listener:** Native support for standard **UDP (Port 53)**, **DNS over HTTPS (DoH / Port 443)**, and **DNS over DTLS (Port 853)**.
-- **Sub-100ms In-Memory Caching:** High-performance LRU / Redis cache honoring DNS TTLs for sub-2ms resolution of benign, high-frequency domains.
-- **Deterministic Threat Ingestion:** Autonomous synchronization with global threat intelligence feeds using **STIX/TAXII protocols** (e.g., AlienVault OTX, URLhaus, MISP).
-- **AI/ML DGA & Typosquatting Classifier:** Real-time lexical feature extraction (Shannon entropy, n-gram frequencies, vowel ratios) to detect botnet C2 domains on the fly.
-- **DNS Tunneling Defense:** Real-time payload size, entropy inspection, and `TXT`/`NULL` query burst detection to stop data exfiltration.
-- **Passive Forensic Engine:** Batch analysis of raw **`.pcap` captures** and **Zeek `dns.log` TSV files** for retrospective threat hunting.
-- **SOC Web Dashboard:** Real-time query streaming, attack breakdown, threat attribution, and connected internal device fleet monitoring.
-- **100% Data Sovereignty:** Fully containerized, on-premises deployment ensuring zero DNS telemetry leaves the internal network.
-
----
-
-## 🏗️ System Architecture & Inspection Pipeline
-
-```text
-                       [ Incoming DNS Request ]
-                 (UDP :53 / DoH :443 / DTLS :853)
-                                 │
-                                 ▼
-                 ┌───────────────────────────────┐
-                 │ Stage 1: In-Memory DNS Cache  │──[ Cache Hit (<2ms) ]──► [ Return Cached IP ]
-                 └───────────────────────────────┘
-                                 │ Cache Miss
-                                 ▼
-                 ┌───────────────────────────────┐
-                 │ Stage 2: STIX/TAXII & Lists   │──[ Threat Match ]──────► [ Sinkhole: 0.0.0.0 ]
-                 └───────────────────────────────┘
-                                 │ Clean / Unknown
-                                 ▼
-                 ┌───────────────────────────────┐
-                 │ Stage 3: AI/ML Threat Engine  │
-                 │   • DGA Classifier (ML)       │
-                 │   • Tunneling Entropy Check   │
-                 │   • Typosquatting Heuristics  │
-                 └───────────────────────────────┘
-                                 │
-                                 ▼
-                 ┌───────────────────────────────┐
-                 │ Stage 4: Risk Aggregation     │
-                 │ Composite Score > Threshold?  │
-                 └──────┬─────────────────┬──────┘
-                        │ Yes             │ No
-                        ▼                 ▼
-             [ Sinkhole: 0.0.0.0 ]   [ Forward to Upstream DNS ]
-             [ Log Alert to SOC  ]   [ Cache Entry with TTL    ]
-                                     [ Return Valid IP         ]
+## Project Structure
 
 ```
----
-
-## 🧱 Module & Tech Stack Breakdown
-
-| Module | Core Functionality | Primary Tech Stack |
-| --- | --- | --- |
-| **`dns-core`** | High-throughput DNS resolver (UDP/DoH/DTLS), caching, sinkholing | **Go** (`miekg/dns`, `crypto/tls`), `golang-lru` |
-| **`ml-engine`** | DGA detection, lexical entropy calculation, ONNX inference | **Python**, `scikit-learn`, `LightGBM`, `ONNX Runtime` |
-| **`threat-intel`** | Automated STIX 2.1 / TAXII feed ingestion, Redis cache sync | **Python**, `stix2`, `taxii2-client`, **Redis** |
-| **`tunneling-risk`** | Payload entropy evaluation, anomaly scoring, risk aggregator | **Python / Go**, `FastAPI`, `scipy` |
-| **`forensics`** | Asynchronous offline analysis for `.pcap` & Zeek logs | **Python**, `dpkt`, `pandas`, `Celery` |
-| **`dashboard`** | Real-time SOC interface, client IP fleet view, analytics | **React / Next.js**, **Tailwind CSS**, `Recharts` |
-
----
-
-## 📁 Repository Structure
-
-```text
-sentinel-dns/
-├── docker-compose.yml              # Single-command multi-container deployment
-├── .env.example                    # Configuration template
-├── dns-core/                       # Core DNS Resolver service (Go)
-│   ├── main.go
-│   ├── cache/
-│   └── protocols/                  # UDP, DoH, DTLS implementations
-├── ml-engine/                      # AI/ML classification pipelines (Python)
-│   ├── train.py
-│   ├── model.onnx
-│   └── feature_extractor.py
-├── threat-intel/                   # STIX/TAXII sync worker (Python)
-│   ├── taxii_worker.py
-│   └── blacklist_manager.py
-├── tunneling-risk/                 # Entropy, exfiltration & composite risk scoring
-│   ├── tunneling_detector.py
-│   └── risk_engine.py
-├── forensics/                      # PCAP & Zeek parser microservice
-│   ├── pcap_parser.py
-│   └── zeek_parser.py
-└── dashboard/                      # Web SOC Frontend (Next.js)
-    ├── src/
-    │   ├── components/
-    │   └── pages/
-    └── package.json
-
+.
+├── DGA_Detection.ipynb        # Main notebook: data prep, features, training, evaluation
+├── app.py                     # FastAPI inference service (generated by the notebook)
+├── dga_domains_full.csv       # Input dataset (label, family, domain)
+├── final_dga_model.joblib     # Saved model + n-gram models + feature list
+├── model_comparison.csv       # Validation metrics for all trained models
+└── feature_importance.png     # Random Forest feature importance plot
 ```
 
----
+## Requirements
 
-## 🚀 Quick Start (Docker Compose)
+The project requires **Python 3.8+**. Install the dependencies with pip:
+```
+pandas
+numpy
+scikit-learn
+matplotlib
+seaborn
+joblib
+fastapi
+uvicorn
+pydantic
+xgboost      # optional
+lightgbm     # optional
+```
 
-### Prerequisites
-
-* [Docker](https://docs.docker.com/get-docker/) & [Docker Compose](https://docs.docker.com/compose/install/)
-* Ports available: `53/udp`, `53/tcp`, `443/tcp`, `853/tcp`, `3000/tcp`, `6379/tcp`
-
-### 1. Clone & Configure
+Install with:
 
 ```bash
-git clone [https://github.com/your-team/sentinel-dns.git](https://github.com/your-team/sentinel-dns.git)
-cd sentinel-dns
-cp .env.example .env
-
+pip install pandas numpy scikit-learn matplotlib seaborn joblib fastapi uvicorn pydantic xgboost lightgbm
 ```
 
-### 2. Launch All Services
+## Dataset Format
+
+The input CSV (`dga_domains_full.csv`) is read **without a header** and expects three columns in this order:
+
+| Column   | Description                                  |
+|----------|-----------------------------------------------|
+| `label`  | `dga` or `legit`                              |
+| `family` | DGA malware family name (or blank/unknown)    |
+| `domain` | The domain string                             |
+
+## Usage
+
+### 1. Train the model
+
+Run the notebook (`DGA_Detection.ipynb`) end to end. It will:
+- Clean and split the data
+- Extract features and fit n-gram models
+- Train/tune all models and print a comparison table
+- Run the family-unseen evaluation
+- Save the final model to `final_dga_model.joblib`
+
+### 2. Run predictions in Python
+
+```python
+# Assuming the function is in app.py
+from app import predict_dga
+
+predict_dga("google.com")
+# {'domain': 'google.com', 'prediction': 'LEGIT', 'probability': 0.02}
+
+predict_dga("xq7mz9k2p4v8.top")
+# {'domain': 'xq7mz9k2p4v8.top', 'prediction': 'DGA', 'probability': 0.97}
+```
+
+### 3. Run the API server
 
 ```bash
-docker-compose up --build -d
-
+python app.py
+# or
+uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-### 3. Verify Deployment
-
-* **DNS Resolver:** Listening on `127.0.0.1:53`
-* **SOC Web Dashboard:** Access at `http://localhost:3000`
-* **API Documentation:** Access at `http://localhost:8000/docs`
-
----
-
-## 🧪 Testing & Verification
-
-### 1. Test Benign DNS Resolution (Sub-100ms)
+**Check health:**
 
 ```bash
-dig @127.0.0.1 -p 53 isro.gov.in
-
+curl http://localhost:8000/health
 ```
 
-### 2. Test Phishing / DGA Interception (Sinkhole Response)
+**Get a prediction:**
 
 ```bash
-# Querying a simulated DGA or blacklisted domain
-dig @127.0.0.1 -p 53 x89vf2qlmn3.top
-
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "xq7mz9k2p4v8.top"}'
 ```
 
-*Expected Output: Returns `0.0.0.0` with metadata logged to the SOC dashboard.*
+Response:
 
-### 3. Test DNS over HTTPS (DoH)
+```json
+{
+  "domain": "xq7mz9k2p4v8.top",
+  "prediction": "DGA",
+  "probability": 0.97,
+  "is_dga": true,
+  "latency_ms": 3.21
+}
+```
+
+### 4. Exposing the API publicly (optional)
+
+The notebook demonstrates using [ngrok](https://ngrok.com/) to tunnel the local FastAPI server to a public URL for quick testing. **Never commit your ngrok auth token to source control** — set it via an environment variable instead:
 
 ```bash
-curl -H 'accept: application/dns-json' 'https://localhost/dns-query?name=google.com&type=A' -k
-
+export NGROK_AUTH_TOKEN=your_token_here
 ```
 
-### 4. Test Offline Forensic Ingestion
+```python
+from pyngrok import ngrok
+import os
 
-1. Navigate to the **Forensics** tab on the SOC Dashboard (`http://localhost:3000/forensics`).
-2. Upload a sample `.pcap` or Zeek `dns.log` file.
-3. View the generated incident report highlighting infected source IPs and timeline analysis.
-
----
-
-## ⚙️ Configuration (`.env`)
-
-```env
-# DNS Server Config
-DNS_UDP_PORT=53
-DNS_DOH_PORT=443
-DNS_DTLS_PORT=853
-UPSTREAM_DNS=1.1.1.1:53
-
-# Threat Intel & Feeds
-TAXII_FEED_URL=[https://otx.alienvault.com/taxii/](https://otx.alienvault.com/taxii/)
-TAXII_API_KEY=your_api_key_here
-INTEL_SYNC_INTERVAL_HOURS=6
-
-# AI / Risk Engine Thresholds
-DGA_THRESHOLD=0.75
-TUNNELING_ENTROPY_THRESHOLD=3.85
-COMPOSITE_RISK_THRESHOLD=0.80
-
-# Redis Cache
-REDIS_HOST=redis
-REDIS_PORT=6379
-
+ngrok.set_auth_token(os.environ["NGROK_AUTH_TOKEN"])
+public_url = ngrok.connect(8000)
+print(public_url)
 ```
 
----
+## Model Selection Criteria
 
-## 📊 Evaluation & Benchmarks
+The final model is chosen primarily by **F1-score**, with **recall** and **ROC-AUC** as secondary criteria. In DGA detection, high recall matters because missing a malicious domain (false negative) can be costly, while precision helps keep false positives manageable.
 
-| Metric | Target (SIH Requirement) | SentinelDNS Performance |
-| --- | --- | --- |
-| **Average Lookup Time** | $< 100\text{ ms}$ | **$2.4\text{ ms}$ (Cache Hit) / $38\text{ ms}$ (Recursive)** |
-| **Supported Protocols** | UDP, DTLS, DoH | **Fully Supported** |
-| **DGA Detection Accuracy** | Real-time AI classification | **$97.8\%$ Accuracy ($F_1\text{ Score: } 0.96$)** |
-| **Passive Analysis Support** | PCAP & Zeek TSV formats | **Supported via Async Stream Parser** |
+## Notes
 
----
-
-## 👥 The Team
-
-Developed for the **Smart India Hackathon** by **Team Cape & Cipher**:
-
-* **Core DNS & Network Architecture:** Module 1 Lead
-* **AI/ML & DGA Classification:** Module 2 Lead
-* **Threat Intelligence & STIX/TAXII:** Module 3 Lead
-* **Tunneling & Behavioral Analytics:** Module 4 Lead
-* **Passive Forensics & Log Engine:** Module 5 Lead
-* **SOC Dashboard & DevOps Integration:** Module 6 Lead
+- TLD (top-level domain) is deliberately excluded from feature extraction to prevent the model from overfitting to specific TLD patterns rather than learning genuine lexical DGA characteristics.
+- N-gram models are fit **only on training-set legitimate domains** in every experiment to avoid data leakage into validation/test sets.
+- The family-unseen evaluation is a strong generalization test: it measures recall on DGA families the model never saw during training, simulating detection of novel/unknown malware.
 
