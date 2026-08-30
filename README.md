@@ -148,6 +148,24 @@ docker-compose up --build -d
 
 ---
 
+
+## 🎥 Live Demo
+
+> **Module 6 (SOC Dashboard)** is deployed and demoable independently of the full pipeline — it runs on realistic mock telemetry matching every other module's exact output contract, so judges can see the live SOC experience without the complete backend stack running.
+
+* **SOC Web Dashboard:** [dns-sentinel.vercel.app](https://sih-2026-omega.vercel.app/)
+
+**What to look for:**
+
+1. **Live Query Stream** — DNS resolutions streaming in real-time via WebSocket, color-coded by verdict (`ALLOW` / `FLAG` / `BLOCK`).
+2. **Composite Risk Scoring** — each blocked query tagged with its detection reason (`DGA_Detected`, `Threat_Intel_Match`, `DNS_Tunneling_Suspected`).
+3. **Client Device Health** — per-host status (`Healthy` / `Suspicious` / `Compromised`) based on rolling block-rate.
+4. **Passive Forensics Upload** — drop a `.pcap` or Zeek `dns.log` file to generate a mock incident report.
+
+> ⚠️ Free-tier hosting note: the backend may take 30–50s to wake up if idle. Give it a moment on first load.
+
+---
+
 ## 🧪 Testing & Verification
 
 ### 1. Test Benign DNS Resolution (Sub-100ms)
