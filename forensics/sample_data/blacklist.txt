@@ -1,0 +1,4 @@
+# Sample blacklist - one domain per line
+# In production this file is replaced by Module 3's live STIX/TAXII feed
+malicious-c2.com
+badactor-phish.net
