@@ -6,20 +6,6 @@ touching scoring logic. Values are placeholders — tune against real
 train/test data once Person 2 (DGA) and Person 3 (Intel) are wired in.
 """
 
-# ---- Composite risk weights (must sum to 1.0) ----
-WEIGHT_DGA = 0.5          # w1 - from Person 2's ML classifier
-WEIGHT_TUNNELING = 0.4    # w2 - computed locally in this module
-WEIGHT_REPUTATION = 0.1   # w3 - lightweight heuristic, computed locally
-
-# ---- Verdict threshold ----
-# NOTE: this must be calibrated against the weights above. With
-# WEIGHT_DGA=0.5, a domain the DGA model is 100% sure about only
-# contributes 0.5 to composite_risk on its own — so a threshold above
-# 0.5 means DGA alone can never trigger BLOCK, no matter how confident
-# the classifier is. Re-tune this (and the weights) once you have real
-# train/test data; 0.45 is a placeholder that lets a single strong
-# signal dominate while still allowing weaker combined signals to add up.
-BLOCK_THRESHOLD = 0.30
 
 # ---- Tunneling sub-score weights (these four combine into Tunneling_Score) ----
 TUNNEL_ENTROPY_WEIGHT = 0.40
