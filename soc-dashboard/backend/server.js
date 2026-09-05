@@ -29,9 +29,39 @@ function pushEvent(evt) {
   io.emit("dns:event", evt);
 }
 
-setInterval(() => {
-  pushEvent(generateEvent());
-}, EVENT_INTERVAL_MS);
+// --- Add this endpoint to accept real events from Module 1 ---
+app.post("/api/ingest", (req, res) => {
+  const evt = {
+    id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    client_ip: req.body.client_ip || "127.0.0.1",
+    client_hostname: req.body.client_hostname || "LOCAL-CLIENT",
+    domain: req.body.domain,
+    query_type: req.body.query_type || "A",
+    dga_score: req.body.dga_score ?? 0.0,
+    is_dga: req.body.is_dga ?? false,
+    intel_match: req.body.intel_match ?? false,
+    is_blacklisted: req.body.is_blacklisted ?? false,
+    threat_source: req.body.threat_source || null,
+    threat_type: req.body.threat_type || null,
+    composite_risk: req.body.composite_risk ?? 0.0,
+    verdict: req.body.verdict, // "ALLOW" or "BLOCK"
+    reason: req.body.reason,
+    response_time_ms: req.body.response_time_ms ?? 2.5,
+    inference_time_ms: req.body.inference_time_ms ?? 1.2,
+  };
+
+  pushEvent(evt);
+  res.sendStatus(200);
+});
+
+// --- COMMENT OUT OR REMOVE THE MOCK INTERVAL GENERATOR ---
+// setInterval(() => {
+//   pushEvent(generateEvent());
+// }, EVENT_INTERVAL_MS);
+// setInterval(() => {
+//   pushEvent(generateEvent());
+// }, EVENT_INTERVAL_MS);
 
 // --- REST API -------------------------------------------------------
 
@@ -139,3 +169,4 @@ server.listen(PORT, () => {
   console.log(`REST:      http://localhost:${PORT}/api/*`);
   console.log(`WebSocket: ws://localhost:${PORT}`);
 });
+
