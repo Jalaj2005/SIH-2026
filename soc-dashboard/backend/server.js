@@ -3,12 +3,10 @@ const http = require("http");
 const cors = require("cors");
 const multer = require("multer");
 const { Server } = require("socket.io");
-const { generateEvent, clientHealthSnapshot } = require("./mockData");
+const { clientHealthSnapshot } = require("./mockData");
 
 const PORT = process.env.PORT || 4000;
-const EVENT_INTERVAL_MS = 1200;
 const MAX_BUFFER = 500;
-
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -29,44 +27,38 @@ function pushEvent(evt) {
   io.emit("dns:event", evt);
 }
 
-// --- Add this endpoint to accept real events from Module 1 ---
-app.post("/api/ingest", (req, res) => {
-  const evt = {
-    id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    timestamp: new Date().toISOString(),
-    client_ip: req.body.client_ip || "127.0.0.1",
-    client_hostname: req.body.client_hostname || "LOCAL-CLIENT",
-    domain: req.body.domain,
-    query_type: req.body.query_type || "A",
-    dga_score: req.body.dga_score ?? 0.0,
-    is_dga: req.body.is_dga ?? false,
-    intel_match: req.body.intel_match ?? false,
-    is_blacklisted: req.body.is_blacklisted ?? false,
-    threat_source: req.body.threat_source || null,
-    threat_type: req.body.threat_type || null,
-    composite_risk: req.body.composite_risk ?? 0.0,
-    verdict: req.body.verdict, // "ALLOW" or "BLOCK"
-    reason: req.body.reason,
-    response_time_ms: req.body.response_time_ms ?? 2.5,
-    inference_time_ms: req.body.inference_time_ms ?? 1.2,
-  };
-
-  pushEvent(evt);
-  res.sendStatus(200);
-});
-
-// --- COMMENT OUT OR REMOVE THE MOCK INTERVAL GENERATOR ---
-// setInterval(() => {
-//   pushEvent(generateEvent());
-// }, EVENT_INTERVAL_MS);
-// setInterval(() => {
-//   pushEvent(generateEvent());
-// }, EVENT_INTERVAL_MS);
+console.log("Mock telemetry disabled - waiting for real events on POST /api/ingest");
 
 // --- REST API -------------------------------------------------------
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", uptime_s: Math.round(process.uptime()) });
+});
+
+app.post("/api/ingest", (req, res) => {
+  const body = req.body || {};
+  const evt = {
+    id: `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    timestamp: new Date().toISOString(),
+    client_ip: body.client_ip || "127.0.0.1",
+    client_hostname: body.client_hostname || "LOCAL-CLIENT",
+    domain: body.domain,
+    query_type: body.query_type || "A",
+    dga_score: body.dga_score ?? 0.0,
+    is_dga: body.is_dga ?? false,
+    intel_match: body.intel_match ?? false,
+    is_blacklisted: body.is_blacklisted ?? false,
+    threat_source: body.threat_source || null,
+    threat_type: body.threat_type || null,
+    composite_risk: body.composite_risk ?? 0.0,
+    verdict: body.verdict,
+    reason: body.reason || "Unknown",
+    response_time_ms: body.response_time_ms ?? 2.5,
+    inference_time_ms: body.inference_time_ms ?? 1.2,
+  };
+
+  pushEvent(evt);
+  res.sendStatus(200);
 });
 
 app.get("/api/queries", (req, res) => {
@@ -115,7 +107,9 @@ app.get("/api/threats/recent", (req, res) => {
 
 // Passive forensics upload — mirrors Module 5's output contract:
 // [{ src_ip, domain, detected_by, timestamp }, ...]
-app.post("/api/forensics/upload", upload.single("file"), (req, res) => {
+const MODULE5_URL = process.env.MODULE5_URL || "http://127.0.0.1:8005/analyze";
+
+app.post("/api/forensics/upload", upload.single("file"), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
   const filename = req.file.originalname;
@@ -124,32 +118,38 @@ app.post("/api/forensics/upload", upload.single("file"), (req, res) => {
     return res.status(400).json({ error: "Expected a .pcap, .pcapng, .tsv, or .log file" });
   }
 
-  // Mock forensic correlation — in production this proxies to Module 5,
-  // whose real output contract is: [{ src_ip, domain, detected_by, timestamp }]
-  const findingsCount = 3 + Math.floor(Math.random() * 5);
-  const detectors = ["ML_DGA", "STIX_Feed", "DNS_Tunneling", "Typosquat_Heuristic"];
-  const suspectDomains = ["malicious-c2.com", "x89vf2qlmn3.top", "isro-login-portal.com"];
-  const clientPool = clientHealthSnapshot(eventBuffer);
+  try {
+    // Proxy to Module 5's forensics service. Their contract:
+    //   POST multipart/form-data, field name "file"
+    //   -> { total_queries_analyzed, compromises_found, results: [{ src_ip, domain, detected_by, timestamp }] }
+    const form = new FormData();
+    form.append("file", new Blob([req.file.buffer]), filename);
 
-  const detail = Array.from({ length: findingsCount }, (_, i) => ({
-    src_ip: clientPool[i % clientPool.length].ip,
-    domain: suspectDomains[i % suspectDomains.length],
-    detected_by: detectors[i % detectors.length],
-    timestamp: new Date(Date.now() - i * 60000).toISOString(),
-  }));
+    const module5Res = await fetch(MODULE5_URL, { method: "POST", body: form });
+    if (!module5Res.ok) {
+      throw new Error(`Module 5 responded ${module5Res.status}`);
+    }
+    const raw = await module5Res.json();
 
-  const report = {
-    report_id: `fr_${Date.now()}`,
-    filename,
-    uploaded_at: new Date().toISOString(),
-    size_bytes: req.file.size,
-    findings: findingsCount,
-    compromised_hosts: [...new Set(detail.map((f) => f.src_ip))].length,
-    detail,
-  };
+    // Adapt Module 5's shape to the shape the dashboard UI expects.
+    const detail = raw.results || [];
+    const report = {
+      report_id: `fr_${Date.now()}`,
+      filename,
+      uploaded_at: new Date().toISOString(),
+      size_bytes: req.file.size,
+      total_queries_analyzed: raw.total_queries_analyzed ?? null,
+      findings: raw.compromises_found ?? detail.length,
+      compromised_hosts: [...new Set(detail.map((f) => f.src_ip))].length,
+      detail,
+    };
 
-  forensicReports.unshift(report);
-  res.json(report);
+    forensicReports.unshift(report);
+    res.json(report);
+  } catch (err) {
+    console.error("Module 5 forensics call failed:", err.message);
+    res.status(502).json({ error: "Forensics service unavailable. Is Module 5 running on :8005?" });
+  }
 });
 
 app.get("/api/forensics/reports", (req, res) => {
@@ -169,4 +169,3 @@ server.listen(PORT, () => {
   console.log(`REST:      http://localhost:${PORT}/api/*`);
   console.log(`WebSocket: ws://localhost:${PORT}`);
 });
-
